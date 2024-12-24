@@ -24,7 +24,7 @@ module sr_cpu
     wire        pcSrc;
     wire        regWrite;
     wire        aluSrc;
-    wire        wdSrc;
+    wire  [1:0] wdSrc;
     wire  [2:0] aluControl;
 
     //instruction decode wires
@@ -48,6 +48,13 @@ module sr_cpu
     //program memory access
     assign imAddr = pc >> 2;
     wire [31:0] instr = imData;
+
+    //stack
+    wire [7:0] stackOutput;
+    wire stackValid;
+    wire stackFull;
+    wire stackPush;
+    wire stackPop;
 
     //instruction decode
     sr_decode id (
@@ -97,7 +104,7 @@ module sr_cpu
         .result     ( aluResult    ) 
     );
 
-    assign wd3 = wdSrc ? immU : aluResult;
+    assign wd3 = ( wdSrc == 2'b00 ) ? aluResult : (( wdSrc == 2'b01 ) ? immU : {24'b0, stackOutput});
 
     //control
     sr_control sm_control (
@@ -105,11 +112,25 @@ module sr_cpu
         .cmdF3      ( cmdF3        ),
         .cmdF7      ( cmdF7        ),
         .aluZero    ( aluZero      ),
+        .stackPush  ( stackPush    ),
+        .stackPop   ( stackPop     ),
         .pcSrc      ( pcSrc        ),
         .regWrite   ( regWrite     ),
         .aluSrc     ( aluSrc       ),
         .wdSrc      ( wdSrc        ),
         .aluControl ( aluControl   ) 
+    );
+
+    //stack
+    lifo8x8 stack (
+        .clk        ( clk          ),
+        .rst        ( rst_n        ),
+        .push       ( stackPush    ),
+        .pop        ( stackPop     ),
+        .in         ( rd1          ),
+        .valid      (),
+        .full       (),
+        .out        ( stackOutput  )
     );
 
 endmodule
@@ -164,9 +185,11 @@ module sr_control
     input     [ 6:0] cmdF7,
     input            aluZero,
     output           pcSrc, 
+    output reg       stackPush,
+    output reg       stackPop,
     output reg       regWrite, 
     output reg       aluSrc,
-    output reg       wdSrc,
+    output reg [1:0] wdSrc,
     output reg [2:0] aluControl
 );
     reg          branch;
@@ -178,8 +201,10 @@ module sr_control
         condZero    = 1'b0;
         regWrite    = 1'b0;
         aluSrc      = 1'b0;
-        wdSrc       = 1'b0;
+        wdSrc       = 2'b00;
         aluControl  = `ALU_ADD;
+        stackPush   = 1'b0;
+        stackPop    = 1'b0;
 
         casez( {cmdF7, cmdF3, cmdOp} )
             { `RVF7_ADD,  `RVF3_ADD,  `RVOP_ADD  } : begin regWrite = 1'b1; aluControl = `ALU_ADD;  end
@@ -189,10 +214,13 @@ module sr_control
             { `RVF7_SUB,  `RVF3_SUB,  `RVOP_SUB  } : begin regWrite = 1'b1; aluControl = `ALU_SUB;  end
 
             { `RVF7_ANY,  `RVF3_ADDI, `RVOP_ADDI } : begin regWrite = 1'b1; aluSrc = 1'b1; aluControl = `ALU_ADD; end
-            { `RVF7_ANY,  `RVF3_ANY,  `RVOP_LUI  } : begin regWrite = 1'b1; wdSrc  = 1'b1; end
+            { `RVF7_ANY,  `RVF3_ANY,  `RVOP_LUI  } : begin regWrite = 1'b1; wdSrc  = 2'b01; end
 
             { `RVF7_ANY,  `RVF3_BEQ,  `RVOP_BEQ  } : begin branch = 1'b1; condZero = 1'b1; aluControl = `ALU_SUB; end
             { `RVF7_ANY,  `RVF3_BNE,  `RVOP_BNE  } : begin branch = 1'b1; aluControl = `ALU_SUB; end
+
+            { `RVF7_ANY,  `RVF3_PUSH, `RVOP_PUSH } : begin wdSrc  = 2'b10; stackPush = 1'b1; end
+            { `RVF7_ANY,  `RVF3_POP,  `RVOP_POP  } : begin wdSrc  = 2'b10; stackPop = 1'b1; regWrite = 1'b1; end
         endcase
     end
 endmodule
@@ -240,4 +268,39 @@ module sm_register_file
 
     always @ (posedge clk)
         if(we3) rf [a3] <= wd3;
+endmodule
+
+module lifo8x8(
+    input wire clk,
+    input wire rst,
+    input wire push,
+    input wire pop,
+    input wire [7:0] in,
+    output wire valid,
+    output wire full,
+    output wire [7:0] out
+    );
+
+    reg [7:0] reg_array [0:7];
+    reg [3:0] counter;
+
+    assign out = reg_array[counter-1];
+    assign valid = |counter;
+    assign full = counter[3];
+
+    always @(posedge clk) begin
+        if (push) begin
+            if (pop)
+                reg_array[counter-1] <= in;
+            else
+                reg_array[counter] <= in;
+        end
+        if (push ^ pop)
+            counter <= counter + (push ? 1 : -1);
+    end
+
+    always @(posedge rst) begin
+        counter <= 'b0;
+    end
+
 endmodule

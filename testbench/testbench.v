@@ -50,6 +50,9 @@ module sm_testbench;
     for (k = 0; k < 32; k = k + 1) begin
         initial $dumpvars(0, sm_top.sm_cpu.rf.rf[k]);
     end
+    for (k = 0; k < 8; k = k + 1) begin
+        initial $dumpvars(0, sm_top.sm_cpu.stack.reg_array[k]);
+    end
 `endif
 
     // simulation init
@@ -101,6 +104,9 @@ module sm_testbench;
 
             { `RVF7_ANY,  `RVF3_BEQ,  `RVOP_BEQ  } : $write ("beq   $%1d, $%1d, 0x%8h (%1d)", rs1, rs2, immB, immB);
             { `RVF7_ANY,  `RVF3_BNE,  `RVOP_BNE  } : $write ("bne   $%1d, $%1d, 0x%8h (%1d)", rs1, rs2, immB, immB);
+
+            { `RVF7_ANY,  `RVF3_PUSH, `RVOP_PUSH } : $write ("push  $%1d", rs1);
+            { `RVF7_ANY,  `RVF3_POP,  `RVOP_POP  } : $write ("pop   $%1d", rs1);
         endcase
     end
     endtask
