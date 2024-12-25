@@ -122,14 +122,18 @@ module sr_cpu
     );
 
     //stack
+    wire stackPush2;
+    wire stackPop2;
+    assign stackPush2 = stackFull ? 0 : stackPush;
+    assign stackPop2 = stackValid ? stackPop : 0;
     lifo8x8 stack (
         .clk        ( clk          ),
         .rst        ( rst_n        ),
-        .push       ( stackPush    ),
-        .pop        ( stackPop     ),
+        .push       ( stackPush2   ),
+        .pop        ( stackPop2    ),
         .in         ( rd1          ),
-        .valid      (),
-        .full       (),
+        .valid      ( stackValid   ),
+        .full       ( stackFull    ),
         .out        ( stackOutput  )
     );
 
